@@ -12,14 +12,14 @@ var mysql = require('../storage/mysql');
  * @param req.body.limit {Number}
  */
 router.get('/', function(req, res) {
-    var difficulty = req.body.difficulty;
-    var limit = req.body.limit || 10;
+    var difficulty = req.query.difficulty;
+    var limit = req.query.limit || 10;
 
     mysql.get().then(function (connection) {
         if (!difficulty) throw new Error('Require \'difficulty\' parameter!');
         if (!(/[0-2]/).test(difficulty)) throw new Error('\'difficulty\' should only be 0, 1 or 2!');
 
-        return connection.query(('SELECT nickname, total_solved_d%D, average_time_d%D FROM players ORDER BY total_solved_d%D DESC, average_time_d%D ASC LIMIT ?').replace('%D', difficulty), [limit]);
+        return connection.query(('SELECT nickname, total_solved_d%D, average_time_d%D FROM players ORDER BY total_solved_d%D DESC, average_time_d%D ASC LIMIT ' + limit).replace(/%D/g, difficulty), []);
     }).then(function (data) {
         res.status(200).send(JSON.stringify({
             msg: 'Succeed!',
@@ -33,6 +33,10 @@ router.get('/', function(req, res) {
     });
 });
 
+/**
+ * @property {Function} post
+ * @param req.body.nickname
+ */
 router.post('/', function (req, res) {
     var nickname = req.body.nickname;
     var pid = req.body.pid;
@@ -66,18 +70,18 @@ router.post('/', function (req, res) {
             // Insert new solve
             return connection.query('INSERT INTO solves (uid, pid, time) VALUES (?, ?, ?)', [player.uid, pid, time]);
         }).then(function () {
-            // Get new ave time
+            // Get new all time
             return connection.query('SELECT SUM(solves.time) AS total_time FROM solves, problems WHERE solves.uid = ? AND solves.pid = problems.pid AND problems.difficulty = ?', [player.uid, difficulty]);
         }).then(function (rows) {
             // Update rankings
             if (rows.length === 0) throw new Error('Failed to sum total time!');
-            var newTotalSolved = player.total_solved + 1;
-            return connection.query(('UPDATE players SET total_solved_d%D = ?, average_time_d%D = ? WHERE uid = ?').replace('%D', difficulty), [newTotalSolved, rows[0].total_time / newTotalSolved, player.uid]);
+            var newTotalSolved = player['total_solved_d' + difficulty] + 1;
+            var newAverageTime = rows[0].total_time / newTotalSolved;
+            return connection.query(('UPDATE players SET total_solved_d%D = ?, average_time_d%D = ? WHERE uid = ?').replace(/%D/g, difficulty), [newTotalSolved, newAverageTime, player.uid]);
         });
     }).then(function (data) {
         res.status(200).send(JSON.stringify({
-            msg: 'Succeed!',
-            data: data
+            msg: 'Succeed!'
         }));
     }).catch(function (err) {
         console.error(err);
